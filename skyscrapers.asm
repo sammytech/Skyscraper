@@ -40,7 +40,15 @@ EXIT = 		10
 
 	.data
 west_array:
-	.word 	0
+	.word 	4,2,3,1
+east_array:
+	.word 	1,2,2,2
+south_array:
+	.word 	1,3,2,2
+north_array:
+	.word 	3,2,2,1
+test_array:
+	.word	north_array, east_array, south_array, west_array
 board_array:
 	.word 	0
 list_1d_row_col_val:
@@ -49,6 +57,8 @@ views:
 	.word	0, 0, 0, 0
 row_or_col:
 	.word	1, 3, 4, 2, 4, 0, 0, 0
+board:
+	.word	1,2,3,4,3,4,1,2,2,3,4,1,4,1,2,3
 #
 # Memory for allocating up to 6400 words.
 #
@@ -239,20 +249,13 @@ valid_board:
 	jal		print_board
 
 	jal 	make_newline
-	la		$a0, row_or_col
+	la		$a0, board
 	li		$a1, 4
-	li		$a2, 3
-	jal		check_building_north_west
+	li		$a2, 10
+	la		$a3, test_array
 
-	move	$a0, $v0
-	li		$v0, PRINT_INT
-	syscall
+	jal 	validate_puzzle
 
-	jal 	make_newline
-	la		$a0, row_or_col
-	li		$a1, 4
-	li		$a2, 2
-	jal		check_building_south_east
 
 	move	$a0, $v0
 	li		$v0, PRINT_INT
@@ -1178,18 +1181,137 @@ validate_puzzle:
 	move	$s2, $a2
 	move	$s3, $a3
 
-	#horizontally
-	#check for repetition
+	#horizontal
 	div		$s2, $s1
-	mflo	$s4
+	mflo	$s7
 
-	mult	$s1, $s4
+	mult	$s1, $s7
 	mflo	$s4
 
 	la		$s5, row_or_col
+	li		$s6, 0
 
-	#vertically
+horizontal_loop:
+	beq		$s6, $s1, horizontal_loop_done
 
+	li		$t0, 4
+	move	$t1, $s4
+	add		$t1, $t1, $s6
+
+	mult	$t0, $t1
+	mflo	$t0
+
+	add		$t0, $s0, $t0
+	lw		$t0, 0($t0)
+
+
+	sw		$t0, 0($s5)
+
+	addi	$s6, $s6, 1
+	addi	$s5, $s5, 4
+	j		horizontal_loop
+horizontal_loop_done:
+	#check repetition
+	la		$a0, row_or_col
+	move	$a1, $s1
+	jal		check_repetition
+	bne		$v0, $zero, bad_puzzle
+
+
+	#check west
+	la		$a0, row_or_col
+	move	$a1, $s1
+	lw		$a2, 12($s3)
+	li		$t0, 4
+	mult	$t0, $s7
+	mflo	$t0
+	add		$a2, $a2, $t0
+	lw		$a2, 0($a2)
+
+	jal		check_building_north_west
+	beq		$v0, $zero, bad_puzzle
+
+	#check east
+	la		$a0, row_or_col
+	move	$a1, $s1
+	lw		$a2, 4($s3)
+	li		$t0, 4
+	mult	$t0, $s7
+	mflo	$t0
+	add		$a2, $a2, $t0
+	lw		$a2, 0($a2)
+
+	jal		check_building_south_east
+	beq		$v0, $zero, bad_puzzle
+
+	#vertical
+	div		$s2, $s1
+	mfhi	$s7
+
+	move	$s4, $s7
+
+	la		$s5, row_or_col
+	li		$s6, 0
+
+vertical_loop:
+	beq		$s6, $s1, vertical_loop_done
+
+	li		$t0, 4
+	mult	$t0, $s4
+	mflo	$t0
+
+
+	add		$t0, $s0, $t0
+	lw		$t0, 0($t0)
+
+	sw		$t0, 0($s5)
+
+	addi	$s6, $s6, 1
+	addi	$s5, $s5, 4
+	add		$s4, $s4, $s1
+	j		vertical_loop
+vertical_loop_done:
+	#check repetition
+	la		$a0, row_or_col
+	move	$a1, $s1
+	jal		check_repetition
+	bne		$v0, $zero, bad_puzzle
+
+	#check north
+	la		$a0, row_or_col
+	move	$a1, $s1
+	lw		$a2, 0($s3)
+	li		$t0, 4
+	mult	$t0, $s7
+	mflo	$t0
+	add		$a2, $a2, $t0
+	lw		$a2, 0($a2)
+
+	jal		check_building_north_west
+	beq		$v0, $zero, bad_puzzle
+
+	#check south
+	la		$a0, row_or_col
+	move	$a1, $s1
+	lw		$a2, 8($s3)
+	li		$t0, 4
+	mult	$t0, $s7
+	mflo	$t0
+	add		$a2, $a2, $t0
+	lw		$a2, 0($a2)
+
+	jal		check_building_south_east
+	beq		$v0, $zero, bad_puzzle
+
+good_puzzle:
+	li		$v0, 1
+	j		validate_puzzle_done
+
+bad_puzzle:
+	li		$v0, 0
+	j		validate_puzzle_done
+
+validate_puzzle_done:
     lw      $ra, 32($sp)    # restore the ra & s reg's from the stack
     lw      $s7, 28($sp)
     lw      $s6, 24($sp)
@@ -1247,6 +1369,7 @@ check_repetition_loop2:
 	slt		$t2, $t1, $s1
 	beq		$t2, $zero, check_repetition_loop2_done
 
+
 	add		$t3, $s0, $t5
 	lw		$t3, 0($t3)
 
@@ -1257,10 +1380,11 @@ check_repetition_loop2:
 	addi	$t5, $t5, 4
 	j		check_repetition_loop2
 check_repetition_loop2_done:
+
 	li		$s7, 0
 	addi	$s2, $s2, 1
 	addi	$t6, $t6, 4
-	jal		make_newline
+
 	j		check_repetition_loop
 
 check_repetition_loop_done:
@@ -1421,10 +1545,6 @@ check_building_south_east_loop:
 	add		$t0, $s0, $t0
 	lw		$t0, 0($t0)
 
-	move	$a0, $t0
-	li		$v0, PRINT_INT
-	syscall
-
 	beq		$t0, $zero, zero_south_east_increment
 
 	slt		$t1, $s6, $t0
@@ -1449,10 +1569,6 @@ check_building_south_east_loop_done:
 	j		false_south_east_building
 
 zero_south_east_done:
-	move	$a0, $s4
-	li		$v0, PRINT_INT
-	syscall
-
 	beq		$s4, $s2, true_south_east_building
 	j		false_south_east_building
 
