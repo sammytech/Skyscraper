@@ -1618,4 +1618,4 @@ check_building_south_east_done:
     addi    $sp,$sp,40      # clean up stack
 
     jr 		$ra
-
+#***** END OF PROGRAM *****************************
