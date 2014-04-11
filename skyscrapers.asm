@@ -58,7 +58,7 @@ views:
 row_or_col:
 	.word	1, 3, 4, 2, 4, 0, 0, 0
 board:
-	.word	1,2,3,4,3,4,1,2,2,3,4,1,4,1,2,3
+	.word	1,2,3,4,3,4,1,2,2,3,4,1,0,0,0,0
 #
 # Memory for allocating up to 6400 words.
 #
@@ -107,8 +107,9 @@ new_error:
 init_puzzle_text:
 	.asciiz		"Initial puzzle \n"
 
-quit_message:
-	.asciiz		"\nYou have quit.\n"
+final_puzzle_text:
+	.asciiz		"Final puzzle \n"
+
 
 	.text					# this is program code
 	#printing constant
@@ -249,18 +250,16 @@ valid_board:
 	jal		print_board
 
 	jal 	make_newline
-	la		$a0, board
-	li		$a1, 4
-	li		$a2, 10
-	la		$a3, test_array
 
-	jal 	validate_puzzle
+	move	$a0, $s1
+	move	$a1, $s0
+	li		$a2, 0
+	move	$a3, $s2
+	jal 	solve
 
-
-	move	$a0, $v0
-	li		$v0, PRINT_INT
-	syscall
-
+	la		$a0, impossible_text
+	jal		print_text
+	jal 	make_newline
 	j 		main_done
 
 fixed_value_error:
@@ -680,7 +679,7 @@ print_integer:
 	addi 	$sp, $sp, -4  	# allocate space for the return address
 	sw 		$ra, 0($sp)		# store the ra on the stack
 
-	beq		$a0, $zero, empty
+	#beq		$a0, $zero, empty
 	li 		$v0, PRINT_INT
 	syscall
 	j		print_integer_done
@@ -1022,7 +1021,7 @@ new_mem_ok:
 #				a2	start index
 #				a3	views from different sides
 #
-# Returns:		v0	1d value
+# Returns:		v0	none
 #
 
 solve:
@@ -1043,10 +1042,8 @@ solve:
 	move	$s3, $a3
 
 	mult	$s1, $s1
-	mflo	$s4
-
-loop_index:
-	beq		$s2, $s4, loop_index_done
+	mflo	$t0
+	beq		$t0, $s2, loop_index_done
 
 	li		$t0, 4
 	mult	$s2, $t0
@@ -1061,13 +1058,37 @@ loop_index:
 	move	$a2, $s2
 	move	$a3, $s3
 	jal		loop_possible_numbers
+	beq		$v0, $zero, solve_done
+	j		no_inner_cont
 
 no_inner:
-	addi	$s2, $s2, 1
-	j		loop_index
+	move	$a0, $s0
+	move	$a1, $s1
+	move	$a2, $s2
+	addi	$a2, $a2, 1
+	move	$a3, $s3
+	beq		$s2, $t0, loop_index_done
+	jal		solve
 
+no_inner_cont:
+	mult	$s1, $s1
+	mflo	$t0
+	bne		$s2, $t0, solve_done
 
 loop_index_done:
+	la		$a0, final_puzzle_text
+	jal		print_text
+
+	jal 	make_newline
+
+	move	$a0, $s0
+	move	$a1, $s1
+	move	$a2, $s3
+	jal		print_board
+	li 		$v0, EXIT		# terminate program
+	syscall
+
+solve_done:
 	lw      $ra, 32($sp)    # restore the ra & s reg's from the stack
     lw      $s7, 28($sp)
     lw      $s6, 24($sp)
@@ -1093,7 +1114,7 @@ loop_index_done:
 #				a2	index
 #				a3	views from different sides
 #
-# Returns:		none
+# Returns:		$v0 1 - something is possible 0 otherwise
 #
 
 loop_possible_numbers:
@@ -1116,7 +1137,7 @@ loop_possible_numbers:
 	li		$s4, 0
 
 loop_possible_numbers_loop:
-	beq		$s4, $s1, loop_possible_numbers_loop_done
+	beq		$s4, $s1, track_back
 
 	li		$t0, 4
 	mult	$t0, $s2
@@ -1124,18 +1145,42 @@ loop_possible_numbers_loop:
 
 	add		$t0, $t0, $s0
 
-	sw		$s4, 0($t0)
+	addi	$t1, $s4, 1
+	sw		$t1, 0($t0)
+
+	move	$a0, $s0
+	move	$a1, $s1
+	move	$a2, $s2
+	move	$a3, $s3
 
 	jal		validate_puzzle
 
 	beq		$v0, $zero, next_spot_cont
 
 next_spot:
+
+	move	$a0, $s0
+	move	$a1, $s1
+	move	$a2, $s2
+	addi	$a2, $a2, 1
+	move	$a3, $s3
 	jal		solve
+	j		next_spot_cont
+
+
 
 next_spot_cont:
 	addi	$s4, $s4, 1
 	j		loop_possible_numbers_loop
+
+
+track_back:
+	li		$t0, 4
+	mult	$t0, $s2
+	mflo	$t0
+
+	add		$t0, $t0, $s0
+	sw		$zero, 0($t0)
 
 loop_possible_numbers_loop_done:
     lw      $ra, 32($sp)    # restore the ra & s reg's from the stack
@@ -1215,8 +1260,8 @@ horizontal_loop_done:
 	la		$a0, row_or_col
 	move	$a1, $s1
 	jal		check_repetition
-	bne		$v0, $zero, bad_puzzle
 
+	bne		$v0, $zero, bad_puzzle
 
 	#check west
 	la		$a0, row_or_col
@@ -1231,6 +1276,7 @@ horizontal_loop_done:
 	jal		check_building_north_west
 	beq		$v0, $zero, bad_puzzle
 
+
 	#check east
 	la		$a0, row_or_col
 	move	$a1, $s1
@@ -1243,6 +1289,7 @@ horizontal_loop_done:
 
 	jal		check_building_south_east
 	beq		$v0, $zero, bad_puzzle
+
 
 	#vertical
 	div		$s2, $s1
@@ -1302,7 +1349,6 @@ vertical_loop_done:
 
 	jal		check_building_south_east
 	beq		$v0, $zero, bad_puzzle
-
 good_puzzle:
 	li		$v0, 1
 	j		validate_puzzle_done
@@ -1449,7 +1495,7 @@ check_building_north_west_loop:
 	add		$t0, $s0, $t0
 	lw		$t0, 0($t0)
 
-	beq		$t0, $zero, zero_increment_north_west
+	beq		$t0, $zero, true_north_west_building
 
 	slt		$t1, $s6, $t0
 	beq		$t1, $zero, check_building_north_west_loop_move
@@ -1459,23 +1505,11 @@ check_building_north_west_loop:
 
 	j		check_building_north_west_loop_move
 
-zero_increment_north_west:
-	addi	$s7, $s7, 1
-
 check_building_north_west_loop_move:
-
 	addi	$s5, $s5, 1
 	j		check_building_north_west_loop
 
 check_building_north_west_loop_done:
-	beq		$s7, $zero, zero_north_west_done
-
-	slt		$t0, $s2, $s4
-	bne		$t0, $zero, true_north_west_building
-	j		false_north_west_building
-
-zero_north_west_done:
-
 	beq		$s4, $s2, true_north_west_building
 	j		false_north_west_building
 
@@ -1534,9 +1568,10 @@ check_building_south_east:
 	addi	$s5, $s1, -1	# counter
 	li		$s6, 0			# current highest building
 	li		$s7, 0			# zero counter
+	li		$s3, -1
 
 check_building_south_east_loop:
-	beq		$s5, $zero, check_building_south_east_loop_done
+	beq		$s5, $s3, check_building_south_east_loop_done
 
 	li		$t0, 4
 	mult	$s5, $t0
@@ -1545,7 +1580,7 @@ check_building_south_east_loop:
 	add		$t0, $s0, $t0
 	lw		$t0, 0($t0)
 
-	beq		$t0, $zero, zero_south_east_increment
+	beq		$t0, $zero, true_south_east_building
 
 	slt		$t1, $s6, $t0
 	beq		$t1, $zero, check_building_south_east_loop_move
@@ -1555,20 +1590,11 @@ check_building_south_east_loop:
 
 	j		check_building_south_east_loop_move
 
-zero_south_east_increment:
-	addi	$s7, $s7, 1
-
 check_building_south_east_loop_move:
 	addi	$s5, $s5, -1
 	j		check_building_south_east_loop
 
 check_building_south_east_loop_done:
-	beq		$s7, $zero, zero_south_east_done
-	slt		$t0, $s2, $s4
-	bne		$t0, $zero, true_south_east_building
-	j		false_south_east_building
-
-zero_south_east_done:
 	beq		$s4, $s2, true_south_east_building
 	j		false_south_east_building
 
